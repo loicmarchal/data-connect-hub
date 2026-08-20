@@ -319,6 +319,12 @@ mod tests {
             tenant_id: &str,
             data_connection: &DataConnection,
         ) -> Result<DataConnectionResource, commons::api::errors::MetaStoreError> {
+            if data_connection.data_connection_type_id != "ct-1" {
+                return Err(commons::api::errors::MetaStoreError::UnprocessableEntity(format!(
+                    "connection type '{}' not found",
+                    data_connection.data_connection_type_id
+                )));
+            }
             Ok(DataConnectionResource {
                 metadata: commons::api::ResourceMetadata {
                     id: "new-conn".to_string(),
@@ -642,7 +648,7 @@ mod tests {
             .insert_header(("content-type", "application/json"))
             .set_json(serde_json::json!({
                 "name": "my-pg",
-                "data_connection_type_id": "postgres",
+                "data_connection_type_id": "ct-1",
                 "format": "tabular",
                 "properties": {}
             }))
@@ -654,6 +660,33 @@ mod tests {
         assert_eq!(body["metadata"]["id"], "new-conn");
         assert_eq!(body["metadata"]["tenant_id"], "test-tenant");
         assert_eq!(body["resource"]["name"], "my-pg");
+    }
+
+    #[actix_web::test]
+    async fn test_create_connection_nonexistent_type() {
+        let app = test::init_service(
+            App::new()
+                .app_data(test_service())
+                .app_data(json_config())
+                .configure(test_app_config),
+        )
+        .await;
+        let req = test::TestRequest::post()
+            .uri("/api/v1/data/connections")
+            .insert_header(("x-tenant-id", "test-tenant"))
+            .insert_header(("content-type", "application/json"))
+            .set_json(serde_json::json!({
+                "name": "my-pg",
+                "data_connection_type_id": "nonexistent-type-id",
+                "format": "tabular",
+                "properties": {}
+            }))
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+
+        assert_eq!(resp.status(), 422);
+        let body: serde_json::Value = test::read_body_json(resp).await;
+        assert_eq!(body["code"], "unprocessable_entity");
     }
 
     #[actix_web::test]
