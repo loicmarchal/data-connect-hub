@@ -300,7 +300,7 @@ mod tests {
                     },
                     resource: DataConnection {
                         name: "my-pg".to_string(),
-                        data_connection_type_id: "postgres".to_string(),
+                        data_connection_type_id: "ct-1".to_string(),
                         format: commons::api::connections::DataFormat::Tabular,
                         admin: None,
                         properties: std::collections::HashMap::new(),
@@ -348,12 +348,18 @@ mod tests {
             if tenant_id == "test-tenant" && uid == "conn-1" {
                 let existing = DataConnection {
                     name: "my-pg".to_string(),
-                    data_connection_type_id: "postgres".to_string(),
+                    data_connection_type_id: "ct-1".to_string(),
                     format: commons::api::connections::DataFormat::Tabular,
                     admin: None,
                     properties: std::collections::HashMap::new(),
                 };
                 let updated = update_fn(existing)?;
+                if updated.data_connection_type_id != "ct-1" {
+                    return Err(commons::api::errors::MetaStoreError::UnprocessableEntity(format!(
+                        "connection type '{}' not found",
+                        updated.data_connection_type_id
+                    )));
+                }
                 Ok(DataConnectionResource {
                     metadata: commons::api::ResourceMetadata {
                         id: "conn-1".to_string(),
@@ -709,7 +715,7 @@ mod tests {
         let body: serde_json::Value = test::read_body_json(resp).await;
         assert_eq!(body["metadata"]["id"], "conn-1");
         assert_eq!(body["resource"]["name"], "renamed-pg");
-        assert_eq!(body["resource"]["data_connection_type_id"], "postgres");
+        assert_eq!(body["resource"]["data_connection_type_id"], "ct-1");
     }
 
     #[actix_web::test]
@@ -752,6 +758,27 @@ mod tests {
         assert_eq!(resp.status(), 404);
         let body: serde_json::Value = test::read_body_json(resp).await;
         assert_eq!(body["code"], "not_found");
+    }
+
+    #[actix_web::test]
+    async fn test_patch_connection_nonexistent_type() {
+        let app = test::init_service(
+            App::new()
+                .app_data(test_service())
+                .app_data(json_config())
+                .configure(test_app_config),
+        )
+        .await;
+        let req = test::TestRequest::patch()
+            .uri("/api/v1/data/connections/conn-1")
+            .insert_header(("x-tenant-id", "test-tenant"))
+            .set_json(serde_json::json!({"data_connection_type_id": "nonexistent-type-id"}))
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+
+        assert_eq!(resp.status(), 422);
+        let body: serde_json::Value = test::read_body_json(resp).await;
+        assert_eq!(body["code"], "unprocessable_entity");
     }
 
     #[actix_web::test]
