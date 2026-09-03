@@ -4,7 +4,7 @@ use commons::api::connections::CredentialsRef;
 use commons::api::connections::DataConnectionResource;
 use commons::api::storage::MetaStore;
 
-use crate::clients::flight::FlightClient;
+use crate::clients::flight::FlightDataClient;
 use crate::rest::errors::ValidationError;
 use chrono::Utc;
 use commons::api::connection_types::DataConnectionTypeResource;
@@ -44,7 +44,7 @@ pub async fn audit_data_connection(
     data_connection_id: &str,
     meta_store: Arc<dyn MetaStore + Send + Sync>,
     secret_store: Arc<dyn SecretStore + Send + Sync>,
-    flight_client: &FlightClient,
+    flight_client: &dyn FlightDataClient,
 ) -> Result<(), ValidationError> {
     let data_connection = meta_store
         .get_data_connection(tenant_id, data_connection_id)
@@ -122,7 +122,7 @@ pub async fn audit_data_connection(
 
 pub async fn audit_data_connection_types(
     meta_store: Arc<dyn MetaStore + Send + Sync>,
-    flight_client: &FlightClient,
+    flight_client: &dyn FlightDataClient,
 ) -> Result<(), ValidationError> {
     let supported = flight_client.get_supported_connectors().await.map_err(|e| {
         tracing::error!(error = %e, "failed to get supported connectors from flight service");
@@ -171,7 +171,7 @@ pub async fn audit_data_connection_types(
 }
 
 pub(crate) async fn audit_connection_type(
-    flight_client: &FlightClient,
+    flight_client: &dyn FlightDataClient,
     meta_store: &Arc<dyn MetaStore + Send + Sync>,
     connection_type: DataConnectionTypeResource,
 ) -> Result<(), ValidationError> {
@@ -410,6 +410,8 @@ mod tests {
             annotations: None,
         }
     }
+
+    use crate::clients::flight::FlightClient;
 
     fn flight_client() -> FlightClient {
         FlightClient::new("http://127.0.0.1:1".to_string())
