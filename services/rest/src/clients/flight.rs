@@ -191,8 +191,7 @@ impl FlightDataClient for FlightClient {
         let metadata = request.metadata_mut();
         metadata.insert(
             X_TENANT_ID,
-            MetadataValue::try_from(tenant_id)
-                .map_err(|_| tonic::Status::invalid_argument("invalid tenant_id"))?,
+            MetadataValue::try_from(tenant_id).map_err(|_| tonic::Status::invalid_argument("invalid tenant_id"))?,
         );
         metadata.insert(
             X_DATA_CONNECTION_ID,
@@ -213,8 +212,7 @@ impl FlightDataClient for FlightClient {
         let metadata = request.metadata_mut();
         metadata.insert(
             X_TENANT_ID,
-            MetadataValue::try_from(tenant_id)
-                .map_err(|_| tonic::Status::invalid_argument("invalid tenant_id"))?,
+            MetadataValue::try_from(tenant_id).map_err(|_| tonic::Status::invalid_argument("invalid tenant_id"))?,
         );
         metadata.insert(
             X_DATA_CONNECTION_ID,
@@ -224,13 +222,12 @@ impl FlightDataClient for FlightClient {
 
         let flight_stream = client.do_get(request).await?.into_inner();
 
-        let batch_stream = FlightRecordBatchStream::new_from_flight_data(
-            flight_stream.map_err(|e| FlightError::Tonic(Box::new(e))),
-        )
-        .map_err(|e| match e {
-            FlightError::Tonic(status) => *status,
-            other => tonic::Status::internal(other.to_string()),
-        });
+        let batch_stream =
+            FlightRecordBatchStream::new_from_flight_data(flight_stream.map_err(|e| FlightError::Tonic(Box::new(e))))
+                .map_err(|e| match e {
+                    FlightError::Tonic(status) => *status,
+                    other => tonic::Status::internal(other.to_string()),
+                });
 
         Ok(Box::pin(batch_stream))
     }

@@ -216,7 +216,12 @@ pub async fn create_connection_type(
         .create_data_connection_type(ctx.tenant_id.as_str(), &connection_type)
         .await?;
 
-    audit_connection_type(service.flight_client.as_ref(), &service.meta_store, connection_type.clone()).await?;
+    audit_connection_type(
+        service.flight_client.as_ref(),
+        &service.meta_store,
+        connection_type.clone(),
+    )
+    .await?;
 
     Ok(HttpResponse::Created().json(connection_type))
 }
@@ -243,7 +248,12 @@ pub async fn patch_connection_type(
         .update_data_connection_type(ctx.tenant_id.as_str(), id.as_str(), update_fn)
         .await?;
 
-    audit_connection_type(service.flight_client.as_ref(), &service.meta_store, connection_type.clone()).await?;
+    audit_connection_type(
+        service.flight_client.as_ref(),
+        &service.meta_store,
+        connection_type.clone(),
+    )
+    .await?;
 
     Ok(HttpResponse::Ok().json(connection_type))
 }
@@ -294,9 +304,9 @@ pub async fn get_binary_data(
 
     let body_stream = batch_stream.map(|result| match result {
         Ok(batch) => {
-            let array = batch.column_by_name("data").ok_or_else(|| {
-                actix_web::error::ErrorInternalServerError("missing 'data' column in response")
-            })?;
+            let array = batch
+                .column_by_name("data")
+                .ok_or_else(|| actix_web::error::ErrorInternalServerError("missing 'data' column in response"))?;
             let binary_array = array.as_binary::<i32>();
             let mut data = Vec::new();
             for i in 0..binary_array.len() {
@@ -306,9 +316,7 @@ pub async fn get_binary_data(
         },
         Err(e) => {
             error!(error = %e, "error reading binary stream from flight service");
-            Err(actix_web::error::ErrorInternalServerError(
-                "binary stream read failed",
-            ))
+            Err(actix_web::error::ErrorInternalServerError("binary stream read failed"))
         },
     });
 
@@ -316,10 +324,7 @@ pub async fn get_binary_data(
 
     Ok(HttpResponse::Ok()
         .content_type("application/octet-stream")
-        .insert_header((
-            "Content-Disposition",
-            format!("attachment; filename=\"{filename}\""),
-        ))
+        .insert_header(("Content-Disposition", format!("attachment; filename=\"{filename}\"")))
         .streaming(body_stream))
 }
 
@@ -426,10 +431,10 @@ pub async fn not_found() -> Result<HttpResponse, RestErrorResponse> {
 
 #[cfg(test)]
 mod tests {
+    use crate::clients::flight::{BinaryStream, FlightDataClient, SupportedConnector};
     use actix_web::{App, middleware, test, web};
     use arrow::array::BinaryArray;
     use arrow::record_batch::RecordBatch;
-    use crate::clients::flight::{BinaryStream, FlightDataClient, SupportedConnector};
     use commons::api::ResourceList;
     use commons::api::connection_types::DataConnectionTypeResource;
     use commons::api::connections::CredentialsRef;
@@ -1303,10 +1308,7 @@ mod tests {
         let resp = test::call_service(&app, req).await;
 
         assert_eq!(resp.status(), 200);
-        assert_eq!(
-            resp.headers().get("content-type").unwrap(),
-            "application/octet-stream"
-        );
+        assert_eq!(resp.headers().get("content-type").unwrap(), "application/octet-stream");
         assert_eq!(
             resp.headers().get("content-disposition").unwrap(),
             "attachment; filename=\"model.bin\""
@@ -1339,8 +1341,9 @@ mod tests {
 
     #[actix_web::test]
     async fn test_get_binary_data_not_found() {
-        let svc =
-            test_service_with_flight(Arc::new(StubFlightClient::failing(tonic::Status::not_found("file not found"))));
+        let svc = test_service_with_flight(Arc::new(StubFlightClient::failing(tonic::Status::not_found(
+            "file not found",
+        ))));
         let app = test::init_service(
             App::new()
                 .app_data(svc)
