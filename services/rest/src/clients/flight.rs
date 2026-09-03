@@ -31,14 +31,25 @@ pub type BinaryStream = Pin<Box<dyn futures::Stream<Item = Result<RecordBatch, t
 
 #[async_trait::async_trait]
 pub trait FlightDataClient: Send + Sync {
-    async fn get_supported_connectors(&self) -> Result<Vec<SupportedConnector>, tonic::Status>;
-    async fn check_data_connection(&self, tenant_id: &str, connection_id: &str) -> Result<(), tonic::Status>;
-    async fn test_credentials(&self, tenant_id: &str, creds: &TestCredentials) -> Result<(), tonic::Status>;
+    async fn get_supported_connectors(&self, token: Option<&str>) -> Result<Vec<SupportedConnector>, tonic::Status>;
+    async fn check_data_connection(
+        &self,
+        tenant_id: &str,
+        connection_id: &str,
+        token: Option<&str>,
+    ) -> Result<(), tonic::Status>;
+    async fn test_credentials(
+        &self,
+        tenant_id: &str,
+        creds: &TestCredentials,
+        token: Option<&str>,
+    ) -> Result<(), tonic::Status>;
     async fn download_binary(
         &self,
         tenant_id: &str,
         connection_id: &str,
         path: &str,
+        token: Option<&str>,
     ) -> Result<BinaryStream, tonic::Status>;
 }
 
@@ -52,6 +63,14 @@ impl FlightClient {
         Self {
             endpoint,
             client: OnceCell::new(),
+        }
+    }
+
+    fn set_auth_token(metadata: &mut tonic::metadata::MetadataMap, token: Option<&str>) {
+        if let Some(token) = token
+            && let Ok(value) = MetadataValue::try_from(token)
+        {
+            metadata.insert("authorization", value);
         }
     }
 
@@ -72,11 +91,12 @@ impl FlightClient {
 
 #[async_trait::async_trait]
 impl FlightDataClient for FlightClient {
-    async fn get_supported_connectors(&self) -> Result<Vec<SupportedConnector>, tonic::Status> {
+    async fn get_supported_connectors(&self, token: Option<&str>) -> Result<Vec<SupportedConnector>, tonic::Status> {
         let mut client = self.client().await?;
-        let action = Action::new("GetSupportedConnectors", "");
+        let mut request = tonic::Request::new(Action::new("GetSupportedConnectors", ""));
+        Self::set_auth_token(request.metadata_mut(), token);
 
-        let mut stream = client.do_action(action).await?.into_inner();
+        let mut stream = client.do_action(request).await?.into_inner();
         let result = stream
             .message()
             .await?
@@ -115,10 +135,16 @@ impl FlightDataClient for FlightClient {
             .collect())
     }
 
-    async fn check_data_connection(&self, tenant_id: &str, connection_id: &str) -> Result<(), tonic::Status> {
+    async fn check_data_connection(
+        &self,
+        tenant_id: &str,
+        connection_id: &str,
+        token: Option<&str>,
+    ) -> Result<(), tonic::Status> {
         let mut client = self.client().await?;
         let mut request = tonic::Request::new(Action::new(ACTION_CHECK_DATA_CONNECTION, ""));
         let metadata = request.metadata_mut();
+        Self::set_auth_token(metadata, token);
         metadata.insert(
             X_TENANT_ID,
             MetadataValue::try_from(tenant_id).map_err(|_| tonic::Status::invalid_argument("invalid tenant_id"))?,
@@ -134,7 +160,12 @@ impl FlightDataClient for FlightClient {
         Ok(())
     }
 
-    async fn test_credentials(&self, tenant_id: &str, creds: &TestCredentials) -> Result<(), tonic::Status> {
+    async fn test_credentials(
+        &self,
+        tenant_id: &str,
+        creds: &TestCredentials,
+        token: Option<&str>,
+    ) -> Result<(), tonic::Status> {
         let mut keys = vec!["data_connection_type_id".to_string()];
         let mut values = vec![creds.data_connection_type_id.clone()];
         for (k, v) in &creds.secret {
@@ -162,6 +193,7 @@ impl FlightDataClient for FlightClient {
 
         let mut client = self.client().await?;
         let mut request = tonic::Request::new(Action::new(ACTION_CHECK_CREDENTIALS, buf));
+        Self::set_auth_token(request.metadata_mut(), token);
         request.metadata_mut().insert(
             X_TENANT_ID,
             MetadataValue::try_from(tenant_id).map_err(|_| tonic::Status::invalid_argument("invalid tenant_id"))?,
@@ -177,6 +209,7 @@ impl FlightDataClient for FlightClient {
         tenant_id: &str,
         connection_id: &str,
         path: &str,
+        token: Option<&str>,
     ) -> Result<BinaryStream, tonic::Status> {
         let mut client = self.client().await?;
 
@@ -189,6 +222,7 @@ impl FlightDataClient for FlightClient {
 
         let mut request = tonic::Request::new(descriptor);
         let metadata = request.metadata_mut();
+        Self::set_auth_token(metadata, token);
         metadata.insert(
             X_TENANT_ID,
             MetadataValue::try_from(tenant_id).map_err(|_| tonic::Status::invalid_argument("invalid tenant_id"))?,
@@ -210,6 +244,7 @@ impl FlightDataClient for FlightClient {
 
         let mut request = tonic::Request::new(ticket);
         let metadata = request.metadata_mut();
+        Self::set_auth_token(metadata, token);
         metadata.insert(
             X_TENANT_ID,
             MetadataValue::try_from(tenant_id).map_err(|_| tonic::Status::invalid_argument("invalid tenant_id"))?,
