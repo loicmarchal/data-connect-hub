@@ -134,6 +134,8 @@ impl From<tonic::Status> for RestErrorResponse {
     fn from(status: tonic::Status) -> Self {
         let (code, http_status) = match status.code() {
             tonic::Code::InvalidArgument => ("invalid_request", 400),
+            tonic::Code::Unauthenticated => ("unauthenticated", 401),
+            tonic::Code::PermissionDenied => ("forbidden", 403),
             tonic::Code::NotFound => ("not_found", 404),
             tonic::Code::Unavailable => ("connection", 503),
             tonic::Code::Unimplemented => ("unsupported_operation", 501),
