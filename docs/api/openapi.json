@@ -332,6 +332,12 @@
           "400": {
             "$ref": "#/components/responses/BadRequest"
           },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
           "404": {
             "$ref": "#/components/responses/NotFound"
           },
@@ -1083,6 +1089,34 @@
             "example": {
               "code": "not_found",
               "message": "Data connection 'abc' not found for tenant 't1'"
+            }
+          }
+        }
+      },
+      "Unauthorized": {
+        "description": "Invalid or missing authentication token",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "code": "unauthenticated",
+              "message": "invalid or missing bearer token"
+            }
+          }
+        }
+      },
+      "Forbidden": {
+        "description": "Insufficient permissions",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "code": "forbidden",
+              "message": "permission denied"
             }
           }
         }
