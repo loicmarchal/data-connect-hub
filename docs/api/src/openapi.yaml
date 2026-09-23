@@ -474,8 +474,8 @@ paths:
       description: >
         Deletes a connection type. The request is rejected with 409 Conflict if
         any connection still references the type; delete those connections
-        first. For a global connection type the referencing connections may
-        belong to other tenants, in which case only their number is reported.
+        first. Only the number of referencing connections is reported, since a
+        global connection type may be referenced from other tenants.
       tags: [connection-types]
       responses:
         "204":

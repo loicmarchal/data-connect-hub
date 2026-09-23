@@ -919,8 +919,8 @@ mod tests {
                 ("test-tenant", "ct-1") => Ok(()),
                 // Stands in for a type the real store finds is still referenced.
                 ("test-tenant", "ct-in-use") => Err(commons::api::errors::MetaStoreError::Conflict(format!(
-                    "cannot delete connection type '{uid}': 2 connections still reference it \
-                     (prod-db, staging-db); delete the connections first"
+                    "cannot delete connection type '{uid}': 2 connections still reference it; \
+                     delete the connections first"
                 ))),
                 _ => Err(commons::api::errors::MetaStoreError::ResourceNotFound(format!(
                     "Data connection type '{uid}' not found"

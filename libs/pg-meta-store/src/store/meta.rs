@@ -28,10 +28,6 @@ pub struct PgMetaStore {
 
 const SECRETS_CA_CERT_PATH: &str = "/secrets/postgresql-ca.crt";
 
-/// Number of referencing connection names quoted back when a connection type
-/// cannot be deleted because it is still in use.
-const REFERENCING_NAME_SAMPLE: i64 = 5;
-
 fn map_sqlx_error(e: sqlx::Error) -> MetaStoreError {
     if let sqlx::Error::Database(ref db_err) = e
         && db_err.code().as_deref() == Some("23505")
@@ -124,22 +120,16 @@ impl PgMetaStore {
 }
 
 // connection_type_in_use_message renders the error returned when a connection type
-// cannot be deleted because connections still reference it. An empty `names` slice
-// yields a count-only message.
-fn connection_type_in_use_message(uid: &str, count: i64, names: &[String]) -> String {
+// cannot be deleted because connections still reference it. Only the number of
+// referencing connections is disclosed: a global connection type may be referenced
+// from tenants the caller cannot otherwise see.
+fn connection_type_in_use_message(uid: &str, count: i64) -> String {
     let subject = if count == 1 {
         "1 connection still references it".to_string()
     } else {
         format!("{count} connections still reference it")
     };
-    let detail = if names.is_empty() {
-        String::new()
-    } else if (names.len() as i64) < count {
-        format!(" ({}, ...)", names.join(", "))
-    } else {
-        format!(" ({})", names.join(", "))
-    };
-    format!("cannot delete connection type '{uid}': {subject}{detail}; delete the connections first")
+    format!("cannot delete connection type '{uid}': {subject}; delete the connections first")
 }
 
 // deserialize_connection_type deserializes a single stored connection type JSON blob,
@@ -927,27 +917,7 @@ impl MetaStore for PgMetaStore {
         })?;
 
         if count > 0 {
-            // For a global type the referencing connections may belong to tenants the
-            // caller cannot otherwise see, so only their number is disclosed.
-            let names: Vec<String> = if tenant_id == self.global_tenant_id {
-                Vec::new()
-            } else {
-                sqlx::query_scalar::<_, Option<String>>(
-                    "SELECT data->'resource'->>'name' FROM data_connections \
-                     WHERE data->'resource'->>'data_connection_type_id' = $1 ORDER BY 1 LIMIT $2",
-                )
-                .bind(uid)
-                .bind(REFERENCING_NAME_SAMPLE)
-                .fetch_all(&mut *tx)
-                .await
-                .unwrap_or_default()
-                .into_iter()
-                .flatten()
-                .collect()
-            };
-            return Err(MetaStoreError::Conflict(connection_type_in_use_message(
-                uid, count, &names,
-            )));
+            return Err(MetaStoreError::Conflict(connection_type_in_use_message(uid, count)));
         }
 
         let result = sqlx::query(
@@ -1256,33 +1226,23 @@ mod tests {
 
     #[test]
     fn test_connection_type_in_use_message_singular() {
-        let msg = connection_type_in_use_message("ct-1", 1, &["prod-db".to_string()]);
+        let msg = connection_type_in_use_message("ct-1", 1);
+        assert!(msg.contains("ct-1"), "got: {msg}");
         assert!(msg.contains("1 connection still references it"), "got: {msg}");
-        assert!(msg.contains("(prod-db)"), "got: {msg}");
         assert!(msg.contains("delete the connections first"), "got: {msg}");
     }
 
     #[test]
     fn test_connection_type_in_use_message_plural() {
-        let names = vec!["a".to_string(), "b".to_string()];
-        let msg = connection_type_in_use_message("ct-1", 2, &names);
-        assert!(msg.contains("2 connections still reference it"), "got: {msg}");
-        assert!(msg.contains("(a, b)"), "got: {msg}");
-    }
-
-    #[test]
-    fn test_connection_type_in_use_message_truncates_sample() {
-        // Fewer names than the count means the sample was capped; say so.
-        let names = vec!["a".to_string(), "b".to_string()];
-        let msg = connection_type_in_use_message("ct-1", 9, &names);
-        assert!(msg.contains("(a, b, ...)"), "got: {msg}");
-    }
-
-    #[test]
-    fn test_connection_type_in_use_message_without_names() {
-        // Global connection types disclose the count only, never tenant connection names.
-        let msg = connection_type_in_use_message("ct-1", 3, &[]);
+        let msg = connection_type_in_use_message("ct-1", 3);
         assert!(msg.contains("3 connections still reference it"), "got: {msg}");
+    }
+
+    #[test]
+    fn test_connection_type_in_use_message_discloses_no_connection_names() {
+        // The count alone: a global connection type may be referenced from tenants
+        // the caller cannot otherwise see.
+        let msg = connection_type_in_use_message("ct-1", 2);
         assert!(!msg.contains('('), "expected no name list, got: {msg}");
     }
 
